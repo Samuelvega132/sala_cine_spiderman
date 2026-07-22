@@ -14,6 +14,7 @@ export type AdminTicket = {
   seat_id: string;
   qr_code_hash: string;
   validation_code: string;
+  checked_in_at: string | null;
   created_at: string;
   attendee: { full_name: string; email: string; access_code: string } | { full_name: string; email: string; access_code: string }[] | null;
 };
@@ -33,6 +34,7 @@ type VerifyRow = {
   seat_id: string;
   qr_code_hash: string;
   validation_code: string;
+  checked_in_at: string | null;
   created_at: string;
   attendee: { full_name: string; email: string } | { full_name: string; email: string }[] | null;
 };
@@ -53,14 +55,14 @@ function makeValidationCode() {
 
 function missingValidationCodeColumn(error: unknown) {
   const supabaseError = error as SupabaseErrorLike;
-  return supabaseError.code === "42703" || supabaseError.message?.includes("validation_code");
+  return supabaseError.code === "42703" || supabaseError.message?.includes("validation_code") || supabaseError.message?.includes("checked_in_at");
 }
 
 async function listAdminTickets() {
   const supabase = createAdminSupabase();
   const withValidationCode = await supabase
     .from("tickets")
-    .select("id, attendee_id, seat_id, qr_code_hash, validation_code, created_at, attendee:attendees(full_name, email, access_code)")
+      .select("id, attendee_id, seat_id, qr_code_hash, validation_code, checked_in_at, created_at, attendee:attendees(full_name, email, access_code)")
     .order("created_at", { ascending: false });
 
   if (!withValidationCode.error) {
@@ -78,9 +80,10 @@ async function listAdminTickets() {
 
   if (fallback.error) throw fallback.error;
 
-  return ((fallback.data ?? []) as Omit<AdminTicket, "validation_code">[]).map(ticket => ({
+  return ((fallback.data ?? []) as Omit<AdminTicket, "validation_code" | "checked_in_at">[]).map(ticket => ({
     ...ticket,
     validation_code: "",
+    checked_in_at: null,
   }));
 }
 
@@ -247,7 +250,7 @@ export async function verifyTicketCode(input: string) {
   const supabase = createAdminSupabase();
   let query = supabase
     .from("tickets")
-    .select("id, attendee_id, seat_id, qr_code_hash, validation_code, created_at, attendee:attendees(full_name, email)");
+    .select("id, attendee_id, seat_id, qr_code_hash, validation_code, checked_in_at, created_at, attendee:attendees(full_name, email)");
 
   query = /^[a-f0-9]{48}$/i.test(hash)
     ? query.eq("qr_code_hash", hash)
@@ -259,12 +262,26 @@ export async function verifyTicketCode(input: string) {
   if (!data) return null;
 
   const row = data as VerifyRow;
+  const wasAlreadyUsed = Boolean(row.checked_in_at);
+
+  if (!wasAlreadyUsed) {
+    const { error: updateError } = await supabase
+      .from("tickets")
+      .update({ checked_in_at: new Date().toISOString() })
+      .eq("id", row.id)
+      .is("checked_in_at", null);
+
+    if (updateError) throw updateError;
+  }
+
   return {
     id: row.id,
     attendee_id: row.attendee_id,
     seat_id: row.seat_id,
     qr_code_hash: row.qr_code_hash,
     validation_code: row.validation_code,
+    checked_in_at: row.checked_in_at,
+    status: wasAlreadyUsed ? "USED" : "VALIDATED",
     created_at: row.created_at,
     attendee: firstAttendee(row.attendee),
   };

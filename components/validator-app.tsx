@@ -9,6 +9,8 @@ type VerifyTicket = {
   seat_id: string;
   qr_code_hash: string;
   validation_code: string;
+  checked_in_at: string | null;
+  status: "VALIDATED" | "USED";
   created_at: string;
   attendee: { full_name: string; email: string } | null;
 };
@@ -29,6 +31,8 @@ export function ValidatorApp() {
   const [authenticated, setAuthenticated] = useState(false);
   const [code, setCode] = useState("");
   const [ticket, setTicket] = useState<VerifyTicket | null>(null);
+  const [resultOpen, setResultOpen] = useState(false);
+  const [lastFailed, setLastFailed] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
@@ -72,6 +76,7 @@ export function ValidatorApp() {
     await fetch("/api/admin/session", { method: "DELETE" });
     setAuthenticated(false);
     setTicket(null);
+    setResultOpen(false);
     setCode("");
   }
 
@@ -85,6 +90,7 @@ export function ValidatorApp() {
     setBusy(true);
     setMessage("");
     setTicket(null);
+    setLastFailed("");
     const response = await fetch("/api/admin/verify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -94,12 +100,14 @@ export function ValidatorApp() {
     setBusy(false);
 
     if (!response.ok) {
-      setMessage(data.error ?? "Ticket no encontrado.");
+      setLastFailed(data.error ?? "Ticket no encontrado.");
+      setResultOpen(true);
       return;
     }
 
     setTicket(data.ticket);
     setCode(data.ticket.validation_code ?? cleanValue);
+    setResultOpen(true);
   }
 
   function stopCamera() {
@@ -127,6 +135,13 @@ export function ValidatorApp() {
       setMessage("No pudimos abrir la camara. Revisa permisos o usa el codigo de 4 caracteres.");
       stopCamera();
     }
+  }
+
+  function resetForNextScan() {
+    setResultOpen(false);
+    setTicket(null);
+    setLastFailed("");
+    setCode("");
   }
 
   if (!authenticated) {
@@ -219,6 +234,47 @@ export function ValidatorApp() {
           )}
         </div>
       </section>
+
+      {resultOpen && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-sm">
+          <section className={`w-full max-w-md overflow-hidden rounded-2xl border bg-[#10131f] shadow-2xl ${ticket?.status === "VALIDATED" ? "border-neon/40" : ticket?.status === "USED" ? "border-amber-300/40" : "border-red-300/40"}`}>
+            <div className={`h-2 ${ticket?.status === "VALIDATED" ? "bg-neon" : ticket?.status === "USED" ? "bg-amber-300" : "bg-red-400"}`} />
+            <div className="p-6 text-center">
+              {ticket?.status === "VALIDATED" && <CheckCircle2 className="mx-auto h-16 w-16 text-neon" />}
+              {ticket?.status === "USED" && <XCircle className="mx-auto h-16 w-16 text-amber-200" />}
+              {!ticket && <XCircle className="mx-auto h-16 w-16 text-red-200" />}
+
+              <p className={`mt-4 text-xs font-bold uppercase tracking-[.2em] ${ticket?.status === "VALIDATED" ? "text-neon" : ticket?.status === "USED" ? "text-amber-200" : "text-red-200"}`}>
+                {ticket?.status === "VALIDATED" ? "Acceso validado" : ticket?.status === "USED" ? "Ticket ya usado" : "No autorizado"}
+              </p>
+
+              <h2 className="mt-3 text-3xl font-black">{ticket?.attendee?.full_name ?? (ticket ? "Invitado" : "Ticket no encontrado")}</h2>
+              {ticket?.attendee?.email && <p className="mt-2 text-sm text-slate-400">{ticket.attendee.email}</p>}
+
+              {ticket ? (
+                <div className={`mt-6 rounded-2xl border p-5 ${ticket.status === "VALIDATED" ? "border-neon/30 bg-neon/10" : "border-amber-300/30 bg-amber-300/10"}`}>
+                  <p className="text-xs uppercase tracking-[.18em] text-slate-300">Butaca</p>
+                  <p className={`mt-2 text-7xl font-black leading-none ${ticket.status === "VALIDATED" ? "text-neon" : "text-amber-200"}`}>{ticket.seat_id}</p>
+                  <p className="mt-5 text-xs uppercase tracking-[.18em] text-slate-300">Codigo</p>
+                  <p className="mt-1 font-mono text-4xl font-black tracking-[.18em] text-white">{ticket.validation_code}</p>
+                  {ticket.status === "USED" && <p className="mt-4 text-sm text-amber-100">Este ticket ya habia sido validado antes.</p>}
+                </div>
+              ) : (
+                <p className="mt-5 rounded-xl border border-red-300/30 bg-red-500/10 p-4 text-sm text-red-100">{lastFailed}</p>
+              )}
+
+              <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                <button onClick={resetForNextScan} className="rounded-xl bg-spider px-4 py-3 font-bold">
+                  Continuar
+                </button>
+                <button onClick={() => { resetForNextScan(); void startCamera(); }} className="rounded-xl border border-white/15 px-4 py-3 font-bold">
+                  Escanear otro
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   );
 }

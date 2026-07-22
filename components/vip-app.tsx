@@ -218,8 +218,8 @@ export function VipApp() {
           <div className="mb-7 text-center">
             <ShieldCheck className="mx-auto h-12 w-12 text-neon" />
             <p className="mt-4 text-xs font-bold tracking-[.25em] text-spider">MULTICINES - MANTA</p>
-            <h1 className="mt-2 text-3xl font-black">Spider-Man VIP</h1>
-            <p className="mt-2 text-sm text-slate-400">Reserva tu butaca para el estreno privado.</p>
+            <h1 className="mt-2 text-3xl font-black">Samuel Bun Experience</h1>
+            <p className="mt-2 text-sm text-slate-400">Reserva tu asiento para el estreno arácnido.</p>
           </div>
 
           <div className="mb-5 grid grid-cols-2 rounded-xl bg-white/5 p-1">

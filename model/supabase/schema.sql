@@ -26,12 +26,14 @@ create table if not exists public.tickets (
   seat_id text not null unique references public.seats(id),
   qr_code_hash text not null unique,
   validation_code text not null unique check (validation_code ~ '^[A-Z0-9]{4}$'),
+  checked_in_at timestamptz,
   created_at timestamptz not null default now()
 );
 
 create index if not exists seats_status_idx on public.seats(status);
 create index if not exists tickets_qr_code_hash_idx on public.tickets(qr_code_hash);
 create index if not exists tickets_validation_code_idx on public.tickets(validation_code);
+create index if not exists tickets_checked_in_at_idx on public.tickets(checked_in_at);
 create index if not exists tickets_attendee_id_idx on public.tickets(attendee_id);
 
 create or replace function public.set_updated_at() returns trigger language plpgsql as $$

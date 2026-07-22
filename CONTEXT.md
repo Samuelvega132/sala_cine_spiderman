@@ -26,6 +26,7 @@ Estreno privado de Spider-Man el 1 de agosto de 2026 en Multicines - Mall del Pa
 - `tickets`: entradas generadas por butaca con:
   - `qr_code_hash`: hash opaco de 48 caracteres usado en `/verify/[hash]`.
   - `validation_code`: codigo corto unico de 4 caracteres alfanumericos para ingreso manual.
+  - `checked_in_at`: fecha/hora en la que el ticket fue validado en puerta; evita reutilizar el mismo ticket.
 - `reserve_seats(text[], uuid)`: RPC atomica con bloqueo de fila para evitar dobles reservas.
 - `generate_ticket_validation_code()`: RPC/helper que genera codigos cortos unicos evitando caracteres confusos.
 
@@ -33,6 +34,7 @@ Estreno privado de Spider-Man el 1 de agosto de 2026 en Multicines - Mall del Pa
 - `model/supabase/schema.sql`: schema completo para instalaciones nuevas.
 - `model/supabase/migrations/20260722_multi_seat_allowance.sql`: habilita reservas grupales y `seat_allowance`.
 - `model/supabase/migrations/20260722_short_validation_codes.sql`: agrega `validation_code`, rellena tickets existentes y actualiza la RPC de reserva.
+- `model/supabase/migrations/20260722_ticket_check_in.sql`: agrega `checked_in_at` para marcar tickets ya usados.
 
 ## Rutas Publicas
 - `GET /`: flujo principal para invitados.
@@ -69,7 +71,8 @@ Estreno privado de Spider-Man el 1 de agosto de 2026 en Multicines - Mall del Pa
 2. Inicia sesion con `ADMIN_PASSWORD`.
 3. Puede escanear el QR con camara usando `@zxing/browser`.
 4. Si el QR falla, escribe el codigo corto de 4 caracteres que aparece en el ticket.
-5. El sistema muestra si el ticket es valido y la butaca correspondiente.
+5. El sistema marca el ticket como usado, muestra un modal de resultado y permite seguir validando.
+6. Si el ticket ya fue usado, muestra alerta de ticket repetido.
 
 ## Flujo Admin
 1. Admin entra en `/admin`.
