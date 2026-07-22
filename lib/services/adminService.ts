@@ -13,6 +13,7 @@ export type AdminTicket = {
   attendee_id: string;
   seat_id: string;
   qr_code_hash: string;
+  validation_code: string;
   created_at: string;
   attendee: { full_name: string; email: string; access_code: string } | { full_name: string; email: string; access_code: string }[] | null;
 };
@@ -31,12 +32,56 @@ type VerifyRow = {
   attendee_id: string;
   seat_id: string;
   qr_code_hash: string;
+  validation_code: string;
   created_at: string;
   attendee: { full_name: string; email: string } | { full_name: string; email: string }[] | null;
 };
 
+type SupabaseErrorLike = {
+  code?: string;
+  message?: string;
+};
+
 function firstAttendee<T>(value: T | T[] | null) {
   return Array.isArray(value) ? value[0] ?? null : value;
+}
+
+function makeValidationCode() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  return Array.from({ length: 4 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join("");
+}
+
+function missingValidationCodeColumn(error: unknown) {
+  const supabaseError = error as SupabaseErrorLike;
+  return supabaseError.code === "42703" || supabaseError.message?.includes("validation_code");
+}
+
+async function listAdminTickets() {
+  const supabase = createAdminSupabase();
+  const withValidationCode = await supabase
+    .from("tickets")
+    .select("id, attendee_id, seat_id, qr_code_hash, validation_code, created_at, attendee:attendees(full_name, email, access_code)")
+    .order("created_at", { ascending: false });
+
+  if (!withValidationCode.error) {
+    return (withValidationCode.data ?? []) as AdminTicket[];
+  }
+
+  if (!missingValidationCodeColumn(withValidationCode.error)) {
+    throw withValidationCode.error;
+  }
+
+  const fallback = await supabase
+    .from("tickets")
+    .select("id, attendee_id, seat_id, qr_code_hash, created_at, attendee:attendees(full_name, email, access_code)")
+    .order("created_at", { ascending: false });
+
+  if (fallback.error) throw fallback.error;
+
+  return ((fallback.data ?? []) as Omit<AdminTicket, "validation_code">[]).map(ticket => ({
+    ...ticket,
+    validation_code: "",
+  }));
 }
 
 export async function getAdminOverview() {
@@ -51,20 +96,16 @@ export async function getAdminOverview() {
       .select("id, row_label, seat_number, status, occupied_by")
       .order("row_label", { ascending: true })
       .order("seat_number", { ascending: true }),
-    supabase
-      .from("tickets")
-      .select("id, attendee_id, seat_id, qr_code_hash, created_at, attendee:attendees(full_name, email, access_code)")
-      .order("created_at", { ascending: false }),
+    listAdminTickets(),
   ]);
 
   if (attendees.error) throw attendees.error;
   if (seats.error) throw seats.error;
-  if (tickets.error) throw tickets.error;
 
   return {
     attendees: (attendees.data ?? []) as AdminAttendee[],
     seats: (seats.data ?? []) as AdminSeat[],
-    tickets: (tickets.data ?? []) as AdminTicket[],
+    tickets,
   };
 }
 
@@ -111,13 +152,25 @@ export async function assignSeatToAttendee(attendeeId: string, seatId: string, f
       if (clearOldSeatError) throw clearOldSeatError;
     }
   } else {
-    const { error: insertError } = await supabase
-      .from("tickets")
-      .insert({
-        attendee_id: attendeeId,
-        seat_id: normalizedSeatId,
-        qr_code_hash: crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "").slice(0, 16),
-      });
+    let insertError: unknown = null;
+
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const { error } = await supabase
+        .from("tickets")
+        .insert({
+          attendee_id: attendeeId,
+          seat_id: normalizedSeatId,
+          qr_code_hash: crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "").slice(0, 16),
+          validation_code: makeValidationCode(),
+        });
+
+      if (!error) {
+        insertError = null;
+        break;
+      }
+
+      insertError = error;
+    }
 
     if (insertError) throw insertError;
   }
@@ -183,17 +236,24 @@ export async function releaseSeat(seatId: string) {
 }
 
 export async function verifyTicketCode(input: string) {
-  const hash = input.trim().split("/verify/").pop()?.split(/[?#]/)[0]?.trim() ?? "";
-  if (!/^[a-f0-9]{48}$/i.test(hash)) {
+  const cleanInput = input.trim();
+  const hash = cleanInput.split("/verify/").pop()?.split(/[?#]/)[0]?.trim() ?? "";
+  const validationCode = cleanInput.toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+  if (!/^[a-f0-9]{48}$/i.test(hash) && !/^[A-Z0-9]{4}$/.test(validationCode)) {
     return null;
   }
 
   const supabase = createAdminSupabase();
-  const { data, error } = await supabase
+  let query = supabase
     .from("tickets")
-    .select("id, attendee_id, seat_id, qr_code_hash, created_at, attendee:attendees(full_name, email)")
-    .eq("qr_code_hash", hash)
-    .maybeSingle();
+    .select("id, attendee_id, seat_id, qr_code_hash, validation_code, created_at, attendee:attendees(full_name, email)");
+
+  query = /^[a-f0-9]{48}$/i.test(hash)
+    ? query.eq("qr_code_hash", hash)
+    : query.eq("validation_code", validationCode);
+
+  const { data, error } = await query.maybeSingle();
 
   if (error) throw error;
   if (!data) return null;
@@ -204,6 +264,7 @@ export async function verifyTicketCode(input: string) {
     attendee_id: row.attendee_id,
     seat_id: row.seat_id,
     qr_code_hash: row.qr_code_hash,
+    validation_code: row.validation_code,
     created_at: row.created_at,
     attendee: firstAttendee(row.attendee),
   };

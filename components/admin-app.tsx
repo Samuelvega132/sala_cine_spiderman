@@ -25,6 +25,7 @@ type AdminTicket = {
   attendee_id: string;
   seat_id: string;
   qr_code_hash: string;
+  validation_code: string;
   created_at: string;
   attendee: { full_name: string; email: string; access_code: string } | { full_name: string; email: string; access_code: string }[] | null;
 };
@@ -33,6 +34,7 @@ type VerifyTicket = {
   id: string;
   seat_id: string;
   qr_code_hash: string;
+  validation_code: string;
   created_at: string;
   attendee: { full_name: string; email: string } | null;
 };
@@ -101,13 +103,13 @@ export function AdminApp() {
     });
   }, [query, tickets]);
 
-  async function loadOverview() {
+  async function loadOverview(showError = true) {
     const response = await fetch("/api/admin/overview", { cache: "no-store" });
     const data = await readJson(response);
 
     if (!response.ok) {
       setAuthenticated(false);
-      setMessage(data.error ?? "No pudimos cargar el panel.");
+      setMessage(showError ? data.error ?? "No pudimos cargar el panel." : "");
       return;
     }
 
@@ -122,7 +124,7 @@ export function AdminApp() {
     const response = await fetch("/api/admin/session", { cache: "no-store" });
     const data = await readJson(response);
     if (data.admin) {
-      await loadOverview();
+      await loadOverview(false);
     }
   }
 
@@ -305,7 +307,7 @@ export function AdminApp() {
             <p className="mt-1 text-sm text-slate-400">Asigna, mueve, libera y valida tickets del estreno.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button onClick={loadOverview} className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-4 py-3 text-sm">
+            <button onClick={() => loadOverview()} className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-4 py-3 text-sm">
               <RefreshCcw size={16} />
               Actualizar
             </button>
@@ -393,7 +395,7 @@ export function AdminApp() {
                           <p className="font-bold">{attendee?.full_name ?? "Invitado"}</p>
                           <p className="text-xs text-slate-400">{attendee?.email}</p>
                         </td>
-                        <td className="p-3 font-mono text-xs text-slate-300">{shortHash(ticket.qr_code_hash)}</td>
+                        <td className="p-3 font-mono text-lg font-black text-white">{ticket.validation_code || shortHash(ticket.qr_code_hash)}</td>
                         <td className="p-3 text-right">
                           <button onClick={() => releaseSeat(ticket.seat_id)} className="inline-flex items-center gap-2 rounded-lg border border-red-300/30 px-3 py-2 text-xs text-red-200">
                             <Trash2 size={14} />
@@ -446,6 +448,7 @@ export function AdminApp() {
                 <p className="mt-3 text-sm text-slate-300">{verified.attendee?.email}</p>
                 <p className="mt-5 text-xs uppercase tracking-widest text-slate-400">Butaca</p>
                 <p className="text-6xl font-black text-neon">{verified.seat_id}</p>
+                <p className="mt-4 font-mono text-2xl font-black text-white">{verified.validation_code}</p>
               </div>
             )}
 

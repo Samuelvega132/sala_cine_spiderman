@@ -59,6 +59,8 @@ export function TicketCard({ ticket }: { ticket: Ticket }) {
               <p className="text-sm text-slate-300">{EVENT.hours}</p>
               <p className="pt-2 text-xs uppercase tracking-widest text-slate-400">Seat / Butaca</p>
               <p className="text-4xl font-black text-neon">{ticket.seat_id}</p>
+              <p className="pt-2 text-xs uppercase tracking-widest text-slate-400">Codigo</p>
+              <p className="font-mono text-2xl font-black text-white">{ticket.validation_code}</p>
             </div>
 
             <div className="self-end rounded-xl bg-white p-2">

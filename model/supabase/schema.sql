@@ -25,11 +25,13 @@ create table if not exists public.tickets (
   attendee_id uuid not null references public.attendees(id),
   seat_id text not null unique references public.seats(id),
   qr_code_hash text not null unique,
+  validation_code text not null unique check (validation_code ~ '^[A-Z0-9]{4}$'),
   created_at timestamptz not null default now()
 );
 
 create index if not exists seats_status_idx on public.seats(status);
 create index if not exists tickets_qr_code_hash_idx on public.tickets(qr_code_hash);
+create index if not exists tickets_validation_code_idx on public.tickets(validation_code);
 create index if not exists tickets_attendee_id_idx on public.tickets(attendee_id);
 
 create or replace function public.set_updated_at() returns trigger language plpgsql as $$
@@ -41,6 +43,30 @@ $$;
 
 drop trigger if exists seats_set_updated_at on public.seats;
 create trigger seats_set_updated_at before update on public.seats for each row execute procedure public.set_updated_at();
+
+create or replace function public.generate_ticket_validation_code()
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_alphabet constant text := 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  v_code text;
+begin
+  loop
+    v_code :=
+      substr(v_alphabet, 1 + floor(random() * length(v_alphabet))::int, 1) ||
+      substr(v_alphabet, 1 + floor(random() * length(v_alphabet))::int, 1) ||
+      substr(v_alphabet, 1 + floor(random() * length(v_alphabet))::int, 1) ||
+      substr(v_alphabet, 1 + floor(random() * length(v_alphabet))::int, 1);
+
+    exit when not exists (select 1 from tickets where validation_code = v_code);
+  end loop;
+
+  return v_code;
+end;
+$$;
 
 create or replace function public.reserve_seat(p_seat_ids text[], p_attendee_id uuid)
 returns boolean
@@ -89,8 +115,8 @@ begin
   update seats set status = 'OCCUPIED', occupied_by = p_attendee_id where id = any(p_seat_ids);
   update attendees set has_claimed = true where id = p_attendee_id;
 
-  insert into tickets (attendee_id, seat_id, qr_code_hash)
-  select p_attendee_id, selected_seat.seat_id, encode(extensions.gen_random_bytes(24), 'hex')
+  insert into tickets (attendee_id, seat_id, qr_code_hash, validation_code)
+  select p_attendee_id, selected_seat.seat_id, encode(extensions.gen_random_bytes(24), 'hex'), public.generate_ticket_validation_code()
   from unnest(p_seat_ids) as selected_seat(seat_id);
 
   return true;

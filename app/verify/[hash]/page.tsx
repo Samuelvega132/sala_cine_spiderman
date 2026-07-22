@@ -70,7 +70,7 @@ export default async function VerifyTicketPage({ params }: { params: { hash: str
                   <Ticket className="h-5 w-5 text-neon" />
                   <p className="text-xs font-bold uppercase tracking-[.16em]">Codigo de validacion</p>
                 </div>
-                <p className="mt-3 font-mono text-lg font-bold text-white sm:text-xl">{shortCode(ticket.qr_code_hash)}</p>
+                <p className="mt-3 font-mono text-3xl font-black text-white sm:text-4xl">{ticket.validation_code || shortCode(ticket.qr_code_hash)}</p>
               </div>
 
               <div className="mt-5 grid gap-3 text-sm text-slate-300 sm:grid-cols-2">

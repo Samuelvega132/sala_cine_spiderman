@@ -1,16 +1,7 @@
--- Run this migration in the Supabase SQL Editor to enable group bookings.
--- It is safe when tickets already exist; existing guests receive a one-seat allowance.
+-- Run this migration to add short 4-character manual validation codes.
 begin;
 
 create extension if not exists pgcrypto with schema extensions;
-
-alter table public.attendees
-  add column if not exists seat_allowance smallint not null default 1
-  check (seat_allowance between 1 and 12);
-
-alter table public.tickets drop constraint if exists tickets_attendee_id_key;
-create index if not exists tickets_attendee_id_idx on public.tickets(attendee_id);
-alter table public.tickets add column if not exists validation_code text;
 
 create or replace function public.generate_ticket_validation_code()
 returns text
@@ -35,6 +26,24 @@ begin
   return v_code;
 end;
 $$;
+
+alter table public.tickets add column if not exists validation_code text;
+
+update public.tickets
+set validation_code = public.generate_ticket_validation_code()
+where validation_code is null or validation_code !~ '^[A-Z0-9]{4}$';
+
+alter table public.tickets
+  alter column validation_code set not null;
+
+alter table public.tickets
+  drop constraint if exists tickets_validation_code_check;
+
+alter table public.tickets
+  add constraint tickets_validation_code_check check (validation_code ~ '^[A-Z0-9]{4}$');
+
+create unique index if not exists tickets_validation_code_key on public.tickets(validation_code);
+create index if not exists tickets_validation_code_idx on public.tickets(validation_code);
 
 create or replace function public.reserve_seats(p_seat_ids text[], p_attendee_id uuid)
 returns boolean
@@ -67,16 +76,14 @@ begin
   update seats set status = 'OCCUPIED', occupied_by = p_attendee_id where id = any(p_seat_ids);
   update attendees set has_claimed = true where id = p_attendee_id;
   insert into tickets (attendee_id, seat_id, qr_code_hash, validation_code)
-  select p_attendee_id, seat_id, encode(extensions.gen_random_bytes(24), 'hex'), public.generate_ticket_validation_code() from unnest(p_seat_ids) as selected_seat(seat_id);
+  select p_attendee_id, seat_id, encode(extensions.gen_random_bytes(24), 'hex'), public.generate_ticket_validation_code()
+  from unnest(p_seat_ids) as selected_seat(seat_id);
   return true;
 end;
 $$;
 
-create or replace function public.reserve_seat(p_seat_id text, p_attendee_id uuid)
-returns boolean language plpgsql security definer set search_path = public as $$
-begin return public.reserve_seats(array[p_seat_id], p_attendee_id); end;
-$$;
-
+revoke all on function public.generate_ticket_validation_code() from public, anon, authenticated;
 revoke all on function public.reserve_seats(text[], uuid) from public, anon, authenticated;
 grant execute on function public.reserve_seats(text[], uuid) to service_role;
+
 commit;

@@ -13,6 +13,7 @@ export type Attendee = {
 
 export type Ticket = {
   qr_code_hash: string;
+  validation_code: string;
   seat_id: string;
   created_at: string;
   attendee: { full_name: string };
