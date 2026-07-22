@@ -1,5 +1,5 @@
 /**
- * Source of truth for the visual geometry of Multicines Mall del Pacífico — Sala 6.
+ * Source of truth for the visual geometry of Multicines Mall del Pacifico - Sala 6.
  * `seats` are selectable positions; `gaps` are physical aisles with no seat.
  * Rows A and B are centered visually, hence their two-column offset.
  */

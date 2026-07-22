@@ -2,6 +2,8 @@
 -- It is safe when tickets already exist; existing guests receive a one-seat allowance.
 begin;
 
+create extension if not exists pgcrypto with schema extensions;
+
 alter table public.attendees
   add column if not exists seat_allowance smallint not null default 1
   check (seat_allowance between 1 and 12);
@@ -40,7 +42,7 @@ begin
   update seats set status = 'OCCUPIED', occupied_by = p_attendee_id where id = any(p_seat_ids);
   update attendees set has_claimed = true where id = p_attendee_id;
   insert into tickets (attendee_id, seat_id, qr_code_hash)
-  select p_attendee_id, seat_id, encode(gen_random_bytes(24), 'hex') from unnest(p_seat_ids) as selected_seat(seat_id);
+  select p_attendee_id, seat_id, encode(extensions.gen_random_bytes(24), 'hex') from unnest(p_seat_ids) as selected_seat(seat_id);
   return true;
 end;
 $$;
